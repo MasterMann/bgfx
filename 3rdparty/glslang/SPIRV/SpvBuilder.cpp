@@ -114,20 +114,8 @@ void Builder::setLine(int lineNum, const char* filename)
         currentLine = lineNum;
         currentFile = filename;
         if (emitOpLines) {
-            // If filename previously seen, use its id, else create a string
-            // and put it in the map.
-            auto sItr = stringIds.find(filename);
-            if (sItr != stringIds.end()) {
-                addLine(sItr->second, currentLine, 0);
-            } else {
-                Instruction* fileString =
-                      new Instruction(getUniqueId(), NoType, OpString);
-                fileString->addStringOperand(filename);
-                spv::Id stringId = fileString->getResultId();
-                strings.push_back(std::unique_ptr<Instruction>(fileString));
-                addLine(stringId, currentLine, 0);
-                stringIds[filename] = stringId;
-            }
+            spv::Id strId = getStringId(filename);
+            addLine(strId, currentLine, 0);
         }
     }
 }
@@ -197,6 +185,40 @@ Id Builder::makePointer(StorageClass storageClass, Id pointee)
 
     // not found, make it
     type = new Instruction(getUniqueId(), NoType, OpTypePointer);
+    type->addImmediateOperand(storageClass);
+    type->addIdOperand(pointee);
+    groupedTypes[OpTypePointer].push_back(type);
+    constantsTypesGlobals.push_back(std::unique_ptr<Instruction>(type));
+    module.mapInstruction(type);
+
+    return type->getResultId();
+}
+
+Id Builder::makeForwardPointer(StorageClass storageClass)
+{
+    // Caching/uniquifying doesn't work here, because we don't know the
+    // pointee type and there can be multiple forward pointers of the same
+    // storage type. Somebody higher up in the stack must keep track.
+    Instruction* type = new Instruction(getUniqueId(), NoType, OpTypeForwardPointer);
+    type->addImmediateOperand(storageClass);
+    constantsTypesGlobals.push_back(std::unique_ptr<Instruction>(type));
+    module.mapInstruction(type);
+
+    return type->getResultId();
+}
+
+Id Builder::makePointerFromForwardPointer(StorageClass storageClass, Id forwardPointerType, Id pointee)
+{
+    // try to find it
+    Instruction* type;
+    for (int t = 0; t < (int)groupedTypes[OpTypePointer].size(); ++t) {
+        type = groupedTypes[OpTypePointer][t];
+        if (type->getImmediateOperand(0) == (unsigned)storageClass &&
+            type->getIdOperand(1) == pointee)
+            return type->getResultId();
+    }
+
+    type = new Instruction(forwardPointerType, NoType, OpTypePointer);
     type->addImmediateOperand(storageClass);
     type->addIdOperand(pointee);
     groupedTypes[OpTypePointer].push_back(type);
@@ -365,6 +387,33 @@ Id Builder::makeMatrixType(Id component, int cols, int rows)
 
     return type->getResultId();
 }
+
+Id Builder::makeCooperativeMatrixType(Id component, Id scope, Id rows, Id cols)
+{
+    // try to find it
+    Instruction* type;
+    for (int t = 0; t < (int)groupedTypes[OpTypeCooperativeMatrixNV].size(); ++t) {
+        type = groupedTypes[OpTypeCooperativeMatrixNV][t];
+        if (type->getIdOperand(0) == component &&
+            type->getIdOperand(1) == scope &&
+            type->getIdOperand(2) == rows &&
+            type->getIdOperand(3) == cols)
+            return type->getResultId();
+    }
+
+    // not found, make it
+    type = new Instruction(getUniqueId(), NoType, OpTypeCooperativeMatrixNV);
+    type->addIdOperand(component);
+    type->addIdOperand(scope);
+    type->addIdOperand(rows);
+    type->addIdOperand(cols);
+    groupedTypes[OpTypeCooperativeMatrixNV].push_back(type);
+    constantsTypesGlobals.push_back(std::unique_ptr<Instruction>(type));
+    module.mapInstruction(type);
+
+    return type->getResultId();
+}
+
 
 // TODO: performance: track arrays per stride
 // If a stride is supplied (non-zero) make an array.
@@ -543,6 +592,7 @@ Id Builder::makeAccelerationStructureNVType()
     Instruction *type;
     if (groupedTypes[OpTypeAccelerationStructureNV].size() == 0) {
         type = new Instruction(getUniqueId(), NoType, OpTypeAccelerationStructureNV);
+        groupedTypes[OpTypeAccelerationStructureNV].push_back(type);
         constantsTypesGlobals.push_back(std::unique_ptr<Instruction>(type));
         module.mapInstruction(type);
     } else {
@@ -588,6 +638,7 @@ int Builder::getNumTypeConstituents(Id typeId) const
     case OpTypeBool:
     case OpTypeInt:
     case OpTypeFloat:
+    case OpTypePointer:
         return 1;
     case OpTypeVector:
     case OpTypeMatrix:
@@ -599,6 +650,9 @@ int Builder::getNumTypeConstituents(Id typeId) const
     }
     case OpTypeStruct:
         return instr->getNumOperands();
+    case OpTypeCooperativeMatrixNV:
+        // has only one constituent when used with OpCompositeConstruct.
+        return 1;
     default:
         assert(0);
         return 1;
@@ -645,6 +699,7 @@ Id Builder::getContainedTypeId(Id typeId, int member) const
     case OpTypeMatrix:
     case OpTypeArray:
     case OpTypeRuntimeArray:
+    case OpTypeCooperativeMatrixNV:
         return instr->getIdOperand(0);
     case OpTypePointer:
         return instr->getIdOperand(1);
@@ -681,14 +736,33 @@ bool Builder::containsType(Id typeId, spv::Op typeOp, unsigned int width) const
                 return true;
         }
         return false;
+    case OpTypePointer:
+        return false;
     case OpTypeVector:
     case OpTypeMatrix:
     case OpTypeArray:
     case OpTypeRuntimeArray:
-    case OpTypePointer:
         return containsType(getContainedTypeId(typeId), typeOp, width);
     default:
         return typeClass == typeOp;
+    }
+}
+
+// return true if the type is a pointer to PhysicalStorageBufferEXT or an
+// array of such pointers. These require restrict/aliased decorations.
+bool Builder::containsPhysicalStorageBufferOrArray(Id typeId) const
+{
+    const Instruction& instr = *module.getInstruction(typeId);
+
+    Op typeClass = instr.getOpCode();
+    switch (typeClass)
+    {
+    case OpTypePointer:
+        return getTypeStorageClass(typeId) == StorageClassPhysicalStorageBufferEXT;
+    case OpTypeArray:
+        return containsPhysicalStorageBufferOrArray(getContainedTypeId(typeId));
+    default:
+        return false;
     }
 }
 
@@ -938,15 +1012,14 @@ Id Builder::makeFpConstant(Id type, double d, bool specConstant)
         return NoResult;
 }
 
-Id Builder::findCompositeConstant(Op typeClass, const std::vector<Id>& comps)
+Id Builder::findCompositeConstant(Op typeClass, Id typeId, const std::vector<Id>& comps)
 {
     Instruction* constant = 0;
     bool found = false;
     for (int i = 0; i < (int)groupedConstants[typeClass].size(); ++i) {
         constant = groupedConstants[typeClass][i];
 
-        // same shape?
-        if (constant->getNumOperands() != (int)comps.size())
+        if (constant->getTypeId() != typeId)
             continue;
 
         // same contents?
@@ -1001,8 +1074,9 @@ Id Builder::makeCompositeConstant(Id typeId, const std::vector<Id>& members, boo
     case OpTypeVector:
     case OpTypeArray:
     case OpTypeMatrix:
+    case OpTypeCooperativeMatrixNV:
         if (! specConstant) {
-            Id existing = findCompositeConstant(typeClass, members);
+            Id existing = findCompositeConstant(typeClass, typeId, members);
             if (existing)
                 return existing;
         }
@@ -1264,15 +1338,39 @@ Id Builder::createUndefined(Id type)
   return inst->getResultId();
 }
 
+// av/vis/nonprivate are unnecessary and illegal for some storage classes.
+spv::MemoryAccessMask Builder::sanitizeMemoryAccessForStorageClass(spv::MemoryAccessMask memoryAccess, StorageClass sc) const
+{
+    switch (sc) {
+    case spv::StorageClassUniform:
+    case spv::StorageClassWorkgroup:
+    case spv::StorageClassStorageBuffer:
+    case spv::StorageClassPhysicalStorageBufferEXT:
+        break;
+    default:
+        memoryAccess = spv::MemoryAccessMask(memoryAccess & 
+                        ~(spv::MemoryAccessMakePointerAvailableKHRMask |
+                          spv::MemoryAccessMakePointerVisibleKHRMask |
+                          spv::MemoryAccessNonPrivatePointerKHRMask));
+        break;
+    }
+    return memoryAccess;
+}
+
 // Comments in header
-void Builder::createStore(Id rValue, Id lValue, spv::MemoryAccessMask memoryAccess, spv::Scope scope)
+void Builder::createStore(Id rValue, Id lValue, spv::MemoryAccessMask memoryAccess, spv::Scope scope, unsigned int alignment)
 {
     Instruction* store = new Instruction(OpStore);
     store->addIdOperand(lValue);
     store->addIdOperand(rValue);
 
+    memoryAccess = sanitizeMemoryAccessForStorageClass(memoryAccess, getStorageClass(lValue));
+
     if (memoryAccess != MemoryAccessMaskNone) {
         store->addImmediateOperand(memoryAccess);
+        if (memoryAccess & spv::MemoryAccessAlignedMask) {
+            store->addImmediateOperand(alignment);
+        }
         if (memoryAccess & spv::MemoryAccessMakePointerAvailableKHRMask) {
             store->addIdOperand(makeUintConstant(scope));
         }
@@ -1282,13 +1380,18 @@ void Builder::createStore(Id rValue, Id lValue, spv::MemoryAccessMask memoryAcce
 }
 
 // Comments in header
-Id Builder::createLoad(Id lValue, spv::MemoryAccessMask memoryAccess, spv::Scope scope)
+Id Builder::createLoad(Id lValue, spv::MemoryAccessMask memoryAccess, spv::Scope scope, unsigned int alignment)
 {
     Instruction* load = new Instruction(getUniqueId(), getDerefTypeId(lValue), OpLoad);
     load->addIdOperand(lValue);
 
+    memoryAccess = sanitizeMemoryAccessForStorageClass(memoryAccess, getStorageClass(lValue));
+
     if (memoryAccess != MemoryAccessMaskNone) {
         load->addImmediateOperand(memoryAccess);
+        if (memoryAccess & spv::MemoryAccessAlignedMask) {
+            load->addImmediateOperand(alignment);
+        }
         if (memoryAccess & spv::MemoryAccessMakePointerVisibleKHRMask) {
             load->addIdOperand(makeUintConstant(scope));
         }
@@ -1331,6 +1434,23 @@ Id Builder::createArrayLength(Id base, unsigned int member)
     Instruction* length = new Instruction(getUniqueId(), intType, OpArrayLength);
     length->addIdOperand(base);
     length->addImmediateOperand(member);
+    buildPoint->addInstruction(std::unique_ptr<Instruction>(length));
+
+    return length->getResultId();
+}
+
+Id Builder::createCooperativeMatrixLength(Id type)
+{
+    spv::Id intType = makeUintType(32);
+
+    // Generate code for spec constants if in spec constant operation
+    // generation mode.
+    if (generatingOpCodeForSpecConst) {
+        return createSpecConstantOp(OpCooperativeMatrixLengthNV, intType, std::vector<Id>(1, type), std::vector<Id>());
+    }
+
+    Instruction* length = new Instruction(getUniqueId(), intType, OpCooperativeMatrixLengthNV);
+    length->addIdOperand(type);
     buildPoint->addInstruction(std::unique_ptr<Instruction>(length));
 
     return length->getResultId();
@@ -2130,7 +2250,8 @@ Id Builder::createConstructor(Decoration precision, const std::vector<Id>& sourc
     // Go through the source arguments, each one could have either
     // a single or multiple components to contribute.
     for (unsigned int i = 0; i < sources.size(); ++i) {
-        if (isScalar(sources[i]))
+
+        if (isScalar(sources[i]) || isPointer(sources[i]))
             latchResult(sources[i]);
         else if (isVector(sources[i]))
             accumulateVectorConstituents(sources[i]);
@@ -2445,11 +2566,15 @@ void Builder::clearAccessChain()
     accessChain.preSwizzleBaseType = NoType;
     accessChain.isRValue = false;
     accessChain.coherentFlags.clear();
+    accessChain.alignment = 0;
 }
 
 // Comments in header
-void Builder::accessChainPushSwizzle(std::vector<unsigned>& swizzle, Id preSwizzleBaseType)
+void Builder::accessChainPushSwizzle(std::vector<unsigned>& swizzle, Id preSwizzleBaseType, AccessChain::CoherentFlags coherentFlags, unsigned int alignment)
 {
+    accessChain.coherentFlags |= coherentFlags;
+    accessChain.alignment |= alignment;
+
     // swizzles can be stacked in GLSL, but simplified to a single
     // one here; the base type doesn't change
     if (accessChain.preSwizzleBaseType == NoType)
@@ -2471,7 +2596,7 @@ void Builder::accessChainPushSwizzle(std::vector<unsigned>& swizzle, Id preSwizz
 }
 
 // Comments in header
-void Builder::accessChainStore(Id rvalue, spv::MemoryAccessMask memoryAccess, spv::Scope scope)
+void Builder::accessChainStore(Id rvalue, spv::MemoryAccessMask memoryAccess, spv::Scope scope, unsigned int alignment)
 {
     assert(accessChain.isRValue == false);
 
@@ -2489,11 +2614,17 @@ void Builder::accessChainStore(Id rvalue, spv::MemoryAccessMask memoryAccess, sp
         source = createLvalueSwizzle(getTypeId(tempBaseId), tempBaseId, source, accessChain.swizzle);
     }
 
-    createStore(source, base, memoryAccess, scope);
+    // take LSB of alignment
+    alignment = alignment & ~(alignment & (alignment-1));
+    if (getStorageClass(base) == StorageClassPhysicalStorageBufferEXT) {
+        memoryAccess = (spv::MemoryAccessMask)(memoryAccess | spv::MemoryAccessAlignedMask);
+    }
+
+    createStore(source, base, memoryAccess, scope, alignment);
 }
 
 // Comments in header
-Id Builder::accessChainLoad(Decoration precision, Decoration nonUniform, Id resultType, spv::MemoryAccessMask memoryAccess, spv::Scope scope)
+Id Builder::accessChainLoad(Decoration precision, Decoration nonUniform, Id resultType, spv::MemoryAccessMask memoryAccess, spv::Scope scope, unsigned int alignment)
 {
     Id id;
 
@@ -2515,9 +2646,9 @@ Id Builder::accessChainLoad(Decoration precision, Decoration nonUniform, Id resu
                 }
             }
 
-            if (constant)
+            if (constant) {
                 id = createCompositeExtract(accessChain.base, swizzleBase, indexes);
-            else {
+            } else {
                 // make a new function variable for this r-value
                 Id lValue = createVariable(StorageClassFunction, getTypeId(accessChain.base), "indexable");
 
@@ -2536,8 +2667,15 @@ Id Builder::accessChainLoad(Decoration precision, Decoration nonUniform, Id resu
             id = accessChain.base;  // no precision, it was set when this was defined
     } else {
         transferAccessChainSwizzle(true);
+
+        // take LSB of alignment
+        alignment = alignment & ~(alignment & (alignment-1));
+        if (getStorageClass(accessChain.base) == StorageClassPhysicalStorageBufferEXT) {
+            memoryAccess = (spv::MemoryAccessMask)(memoryAccess | spv::MemoryAccessAlignedMask);
+        }
+
         // load through the access chain
-        id = createLoad(collapseAccessChain(), memoryAccess, scope);
+        id = createLoad(collapseAccessChain(), memoryAccess, scope, alignment);
         setPrecision(id, precision);
         addDecoration(id, nonUniform);
     }
@@ -2843,7 +2981,8 @@ void Builder::createConditionalBranch(Id condition, Block* thenBlock, Block* els
 // OpSource
 // [OpSourceContinued]
 // ...
-void Builder::dumpSourceInstructions(std::vector<unsigned int>& out) const
+void Builder::dumpSourceInstructions(const spv::Id fileId, const std::string& text,
+                                     std::vector<unsigned int>& out) const
 {
     const int maxWordCount = 0xFFFF;
     const int opSourceWordCount = 4;
@@ -2855,14 +2994,14 @@ void Builder::dumpSourceInstructions(std::vector<unsigned int>& out) const
         sourceInst.addImmediateOperand(source);
         sourceInst.addImmediateOperand(sourceVersion);
         // File operand
-        if (sourceFileStringId != NoResult) {
-            sourceInst.addIdOperand(sourceFileStringId);
+        if (fileId != NoResult) {
+            sourceInst.addIdOperand(fileId);
             // Source operand
-            if (sourceText.size() > 0) {
+            if (text.size() > 0) {
                 int nextByte = 0;
                 std::string subString;
-                while ((int)sourceText.size() - nextByte > 0) {
-                    subString = sourceText.substr(nextByte, nonNullBytesPerInstruction);
+                while ((int)text.size() - nextByte > 0) {
+                    subString = text.substr(nextByte, nonNullBytesPerInstruction);
                     if (nextByte == 0) {
                         // OpSource
                         sourceInst.addStringOperand(subString.c_str());
@@ -2880,6 +3019,14 @@ void Builder::dumpSourceInstructions(std::vector<unsigned int>& out) const
         } else
             sourceInst.dump(out);
     }
+}
+
+// Dump an OpSource[Continued] sequence for the source and every include file
+void Builder::dumpSourceInstructions(std::vector<unsigned int>& out) const
+{
+    dumpSourceInstructions(sourceFileStringId, sourceText, out);
+    for (auto iItr = includeFiles.begin(); iItr != includeFiles.end(); ++iItr)
+        dumpSourceInstructions(iItr->first, *iItr->second, out);
 }
 
 void Builder::dumpInstructions(std::vector<unsigned int>& out, const std::vector<std::unique_ptr<Instruction> >& instructions) const

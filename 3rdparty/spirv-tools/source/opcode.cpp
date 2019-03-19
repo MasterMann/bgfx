@@ -260,6 +260,7 @@ int32_t spvOpcodeIsComposite(const SpvOp opcode) {
     case SpvOpTypeMatrix:
     case SpvOpTypeArray:
     case SpvOpTypeStruct:
+    case SpvOpTypeCooperativeMatrixNV:
       return true;
     default:
       return false;
@@ -324,6 +325,8 @@ int32_t spvOpcodeGeneratesType(SpvOp op) {
     case SpvOpTypePipe:
     case SpvOpTypePipeStorage:
     case SpvOpTypeNamedBarrier:
+    case SpvOpTypeAccelerationStructureNV:
+    case SpvOpTypeCooperativeMatrixNV:
       return true;
     default:
       // In particular, OpTypeForwardPointer does not generate a type,
@@ -390,10 +393,9 @@ bool spvOpcodeIsBranch(SpvOp opcode) {
   }
 }
 
-bool spvOpcodeIsAtomicOp(const SpvOp opcode) {
+bool spvOpcodeIsAtomicWithLoad(const SpvOp opcode) {
   switch (opcode) {
     case SpvOpAtomicLoad:
-    case SpvOpAtomicStore:
     case SpvOpAtomicExchange:
     case SpvOpAtomicCompareExchange:
     case SpvOpAtomicCompareExchangeWeak:
@@ -409,11 +411,15 @@ bool spvOpcodeIsAtomicOp(const SpvOp opcode) {
     case SpvOpAtomicOr:
     case SpvOpAtomicXor:
     case SpvOpAtomicFlagTestAndSet:
-    case SpvOpAtomicFlagClear:
       return true;
     default:
       return false;
   }
+}
+
+bool spvOpcodeIsAtomicOp(const SpvOp opcode) {
+  return (spvOpcodeIsAtomicWithLoad(opcode) || opcode == SpvOpAtomicStore ||
+          opcode == SpvOpAtomicFlagClear);
 }
 
 bool spvOpcodeIsReturn(SpvOp opcode) {
@@ -581,5 +587,53 @@ bool spvOpcodeIsScalarizable(SpvOp opcode) {
       return true;
     default:
       return false;
+  }
+}
+
+bool spvOpcodeIsDebug(SpvOp opcode) {
+  switch (opcode) {
+    case SpvOpName:
+    case SpvOpMemberName:
+    case SpvOpSource:
+    case SpvOpSourceContinued:
+    case SpvOpSourceExtension:
+    case SpvOpString:
+    case SpvOpLine:
+    case SpvOpNoLine:
+      return true;
+    default:
+      return false;
+  }
+}
+
+std::vector<uint32_t> spvOpcodeMemorySemanticsOperandIndices(SpvOp opcode) {
+  switch (opcode) {
+    case SpvOpMemoryBarrier:
+      return {1};
+    case SpvOpAtomicStore:
+    case SpvOpControlBarrier:
+    case SpvOpAtomicFlagClear:
+    case SpvOpMemoryNamedBarrier:
+      return {2};
+    case SpvOpAtomicLoad:
+    case SpvOpAtomicExchange:
+    case SpvOpAtomicIIncrement:
+    case SpvOpAtomicIDecrement:
+    case SpvOpAtomicIAdd:
+    case SpvOpAtomicISub:
+    case SpvOpAtomicSMin:
+    case SpvOpAtomicUMin:
+    case SpvOpAtomicSMax:
+    case SpvOpAtomicUMax:
+    case SpvOpAtomicAnd:
+    case SpvOpAtomicOr:
+    case SpvOpAtomicXor:
+    case SpvOpAtomicFlagTestAndSet:
+      return {4};
+    case SpvOpAtomicCompareExchange:
+    case SpvOpAtomicCompareExchangeWeak:
+      return {4, 5};
+    default:
+      return {};
   }
 }
