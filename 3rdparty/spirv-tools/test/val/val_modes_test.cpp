@@ -837,6 +837,347 @@ OpExecutionModeId %main LocalSizeId %int_1 %int_1 %int_1
   EXPECT_THAT(SPV_SUCCESS, ValidateInstructions(env));
 }
 
+TEST_F(ValidateModeExecution, ExecModeSubgroupsPerWorkgroupIdBad) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability SubgroupDispatch
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main"
+OpExecutionMode %main SubgroupsPerWorkgroupId %int_1
+%int = OpTypeInt 32 0
+%int_1 = OpConstant %int 1
+)" + kVoidFunction;
+
+  spv_target_env env = SPV_ENV_UNIVERSAL_1_3;
+  CompileSuccessfully(spirv, env);
+  EXPECT_THAT(SPV_ERROR_INVALID_DATA, ValidateInstructions(env));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("OpExecutionMode is only valid when the Mode operand "
+                        "is an execution mode that takes no Extra Operands"));
+}
+
+TEST_F(ValidateModeExecution, ExecModeIdSubgroupsPerWorkgroupIdGood) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability SubgroupDispatch
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main"
+OpExecutionModeId %main SubgroupsPerWorkgroupId %int_1
+%int = OpTypeInt 32 0
+%int_1 = OpConstant %int 1
+)" + kVoidFunction;
+
+  spv_target_env env = SPV_ENV_UNIVERSAL_1_3;
+  CompileSuccessfully(spirv, env);
+  EXPECT_THAT(SPV_SUCCESS, ValidateInstructions(env));
+}
+
+TEST_F(ValidateModeExecution, ExecModeIdSubgroupsPerWorkgroupIdNonConstantBad) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability SubgroupDispatch
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main"
+OpExecutionModeId %main SubgroupsPerWorkgroupId %int_1
+%int = OpTypeInt 32 0
+%int_ptr = OpTypePointer Private %int
+%int_1 = OpVariable %int_ptr Private
+)" + kVoidFunction;
+
+  spv_target_env env = SPV_ENV_UNIVERSAL_1_3;
+  CompileSuccessfully(spirv, env);
+  EXPECT_THAT(SPV_ERROR_INVALID_ID, ValidateInstructions(env));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("For OpExecutionModeId all Extra Operand ids must be "
+                        "constant instructions."));
+}
+
+TEST_F(ValidateModeExecution, ExecModeLocalSizeHintIdBad) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Kernel %main "main"
+OpExecutionMode %main LocalSizeHintId %int_1
+%int = OpTypeInt 32 0
+%int_1 = OpConstant %int 1
+)" + kVoidFunction;
+
+  spv_target_env env = SPV_ENV_UNIVERSAL_1_3;
+  CompileSuccessfully(spirv, env);
+  EXPECT_THAT(SPV_ERROR_INVALID_DATA, ValidateInstructions(env));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("OpExecutionMode is only valid when the Mode operand "
+                        "is an execution mode that takes no Extra Operands"));
+}
+
+TEST_F(ValidateModeExecution, ExecModeIdLocalSizeHintIdGood) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Kernel %main "main"
+OpExecutionModeId %main LocalSizeHintId %int_1
+%int = OpTypeInt 32 0
+%int_1 = OpConstant %int 1
+)" + kVoidFunction;
+
+  spv_target_env env = SPV_ENV_UNIVERSAL_1_3;
+  CompileSuccessfully(spirv, env);
+  EXPECT_THAT(SPV_SUCCESS, ValidateInstructions(env));
+}
+
+TEST_F(ValidateModeExecution, ExecModeIdLocalSizeHintIdNonConstantBad) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main"
+OpExecutionModeId %main LocalSizeHintId %int_1
+%int = OpTypeInt 32 0
+%int_ptr = OpTypePointer Private %int
+%int_1 = OpVariable %int_ptr Private
+)" + kVoidFunction;
+
+  spv_target_env env = SPV_ENV_UNIVERSAL_1_3;
+  CompileSuccessfully(spirv, env);
+  EXPECT_THAT(SPV_ERROR_INVALID_ID, ValidateInstructions(env));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("For OpExecutionModeId all Extra Operand ids must be "
+                        "constant instructions."));
+}
+
+TEST_F(ValidateModeExecution, ExecModeLocalSizeIdBad) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Kernel %main "main"
+OpExecutionMode %main LocalSizeId %int_1 %int_1 %int_1
+%int = OpTypeInt 32 0
+%int_1 = OpConstant %int 1
+)" + kVoidFunction;
+
+  spv_target_env env = SPV_ENV_UNIVERSAL_1_3;
+  CompileSuccessfully(spirv, env);
+  EXPECT_THAT(SPV_ERROR_INVALID_DATA, ValidateInstructions(env));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("OpExecutionMode is only valid when the Mode operand "
+                        "is an execution mode that takes no Extra Operands"));
+}
+
+TEST_F(ValidateModeExecution, ExecModeIdLocalSizeIdGood) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Kernel %main "main"
+OpExecutionModeId %main LocalSizeId %int_1 %int_1 %int_1
+%int = OpTypeInt 32 0
+%int_1 = OpConstant %int 1
+)" + kVoidFunction;
+
+  spv_target_env env = SPV_ENV_UNIVERSAL_1_3;
+  CompileSuccessfully(spirv, env);
+  EXPECT_THAT(SPV_SUCCESS, ValidateInstructions(env));
+}
+
+TEST_F(ValidateModeExecution, ExecModeIdLocalSizeIdNonConstantBad) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main"
+OpExecutionModeId %main LocalSizeId %int_1 %int_1 %int_1
+%int = OpTypeInt 32 0
+%int_ptr = OpTypePointer Private %int
+%int_1 = OpVariable %int_ptr Private
+)" + kVoidFunction;
+
+  spv_target_env env = SPV_ENV_UNIVERSAL_1_3;
+  CompileSuccessfully(spirv, env);
+  EXPECT_THAT(SPV_ERROR_INVALID_ID, ValidateInstructions(env));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("For OpExecutionModeId all Extra Operand ids must be "
+                        "constant instructions."));
+}
+
+TEST_F(ValidateMode, FragmentShaderInterlockVertexBad) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability FragmentShaderPixelInterlockEXT
+OpExtension "SPV_EXT_fragment_shader_interlock"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main"
+OpExecutionMode %main PixelInterlockOrderedEXT
+)" + kVoidFunction;
+
+  CompileSuccessfully(spirv);
+  EXPECT_THAT(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "Execution mode can only be used with the Fragment execution model"));
+}
+
+TEST_F(ValidateMode, FragmentShaderInterlockTooManyModesBad) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability FragmentShaderPixelInterlockEXT
+OpCapability FragmentShaderSampleInterlockEXT
+OpExtension "SPV_EXT_fragment_shader_interlock"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+OpExecutionMode %main PixelInterlockOrderedEXT
+OpExecutionMode %main SampleInterlockOrderedEXT
+)" + kVoidFunction;
+
+  CompileSuccessfully(spirv);
+  EXPECT_THAT(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Fragment execution model entry points can specify at most "
+                "one fragment shader interlock execution mode"));
+}
+
+TEST_F(ValidateMode, FragmentShaderInterlockNoModeBad) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability FragmentShaderPixelInterlockEXT
+OpExtension "SPV_EXT_fragment_shader_interlock"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%func = OpFunction %void None %void_fn
+%entryf = OpLabel
+OpBeginInvocationInterlockEXT
+OpEndInvocationInterlockEXT
+OpReturn
+OpFunctionEnd
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+%1 = OpFunctionCall %void %func
+OpReturn
+OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv);
+  EXPECT_THAT(SPV_ERROR_INVALID_ID, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "OpBeginInvocationInterlockEXT/OpEndInvocationInterlockEXT require a "
+          "fragment shader interlock execution mode"));
+}
+
+TEST_F(ValidateMode, FragmentShaderInterlockGood) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability FragmentShaderPixelInterlockEXT
+OpExtension "SPV_EXT_fragment_shader_interlock"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+OpExecutionMode %main PixelInterlockOrderedEXT
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%func = OpFunction %void None %void_fn
+%entryf = OpLabel
+OpBeginInvocationInterlockEXT
+OpEndInvocationInterlockEXT
+OpReturn
+OpFunctionEnd
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+%1 = OpFunctionCall %void %func
+OpReturn
+OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv);
+  EXPECT_THAT(SPV_SUCCESS, ValidateInstructions());
+}
+
+TEST_F(ValidateMode, FragmentShaderDemoteVertexBad) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability DemoteToHelperInvocationEXT
+OpExtension "SPV_EXT_demote_to_helper_invocation"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main"
+%bool = OpTypeBool
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+OpDemoteToHelperInvocationEXT
+%1 = OpIsHelperInvocationEXT %bool
+OpReturn
+OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv);
+  EXPECT_THAT(SPV_ERROR_INVALID_ID, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "OpDemoteToHelperInvocationEXT requires Fragment execution model"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("OpIsHelperInvocationEXT requires Fragment execution model"));
+}
+
+TEST_F(ValidateMode, FragmentShaderDemoteGood) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability DemoteToHelperInvocationEXT
+OpExtension "SPV_EXT_demote_to_helper_invocation"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%bool = OpTypeBool
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+OpDemoteToHelperInvocationEXT
+%1 = OpIsHelperInvocationEXT %bool
+OpReturn
+OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv);
+  EXPECT_THAT(SPV_SUCCESS, ValidateInstructions());
+}
+
+TEST_F(ValidateMode, FragmentShaderDemoteBadType) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability DemoteToHelperInvocationEXT
+OpExtension "SPV_EXT_demote_to_helper_invocation"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%u32 = OpTypeInt 32 0
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+OpDemoteToHelperInvocationEXT
+%1 = OpIsHelperInvocationEXT %u32
+OpReturn
+OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv);
+  EXPECT_THAT(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected bool scalar type as Result Type"));
+}
+
 }  // namespace
 }  // namespace val
 }  // namespace spvtools

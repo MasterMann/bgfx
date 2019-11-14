@@ -1,13 +1,14 @@
 /*
  * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
- * License: https://github.com/bkaradzic/bgfx/blob/master/LICENSE
- *
- * vim: set tabstop=4 expandtab:
+ * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
 /*
  *
- * AUTO GENERATED! DO NOT EDIT! ( source : $source )
+ * AUTO GENERATED FROM IDL! DO NOT EDIT! (source : $source)
+ *
+ * More info about IDL:
+ * https://gist.github.com/bkaradzic/05a1c86a6dd57bf86e2d828878e88dc2#bgfx-is-switching-to-idl-to-generate-api
  *
  */
 
@@ -105,6 +106,8 @@ typedef struct bgfx_callback_vtbl_s
 } bgfx_callback_vtbl_t;
 
 $chandles
+
+#define BGFX_HANDLE_IS_VALID(h) ((h).idx != UINT16_MAX)
 
 $cfuncptrs
 

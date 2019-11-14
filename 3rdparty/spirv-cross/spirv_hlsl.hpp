@@ -19,9 +19,8 @@
 
 #include "spirv_glsl.hpp"
 #include <utility>
-#include <vector>
 
-namespace spirv_cross
+namespace SPIRV_CROSS_NAMESPACE
 {
 // Interface which remaps vertex inputs to a fixed semantic name to make linking easier.
 struct HLSLVertexAttributeRemap
@@ -63,7 +62,7 @@ public:
 	};
 
 	explicit CompilerHLSL(std::vector<uint32_t> spirv_)
-	    : CompilerGLSL(move(spirv_))
+	    : CompilerGLSL(std::move(spirv_))
 	{
 	}
 
@@ -115,7 +114,7 @@ public:
 	// If non-zero, this returns the variable ID of a cbuffer which corresponds to
 	// the cbuffer declared above. By default, no binding or descriptor set decoration is set,
 	// so the calling application should declare explicit bindings on this ID before calling compile().
-	uint32_t remap_num_workgroups_builtin();
+	VariableID remap_num_workgroups_builtin();
 
 private:
 	std::string type_to_glsl(const SPIRType &type, uint32_t id = 0) override;
@@ -146,7 +145,7 @@ private:
 	std::string layout_for_member(const SPIRType &type, uint32_t index) override;
 	std::string to_interpolation_qualifiers(const Bitset &flags) override;
 	std::string bitcast_glsl_op(const SPIRType &result_type, const SPIRType &argument_type) override;
-	std::string to_func_call_arg(uint32_t id) override;
+	std::string to_func_call_arg(const SPIRFunction::Parameter &arg, uint32_t id) override;
 	std::string to_sampler_expression(uint32_t id);
 	std::string to_resource_binding(const SPIRVariable &var);
 	std::string to_resource_binding_sampler(const SPIRVariable &var);
@@ -168,6 +167,8 @@ private:
 	void replace_illegal_names() override;
 
 	Options hlsl_options;
+
+	// TODO: Refactor this to be more similar to MSL, maybe have some common system in place?
 	bool requires_op_fmod = false;
 	bool requires_fp16_packing = false;
 	bool requires_explicit_fp16_packing = false;
@@ -180,6 +181,9 @@ private:
 	bool requires_inverse_2x2 = false;
 	bool requires_inverse_3x3 = false;
 	bool requires_inverse_4x4 = false;
+	bool requires_scalar_reflect = false;
+	bool requires_scalar_refract = false;
+	bool requires_scalar_faceforward = false;
 	uint64_t required_textureSizeVariants = 0;
 	void require_texture_query_variant(const SPIRType &type);
 
@@ -209,19 +213,21 @@ private:
 	void emit_builtin_variables();
 	bool require_output = false;
 	bool require_input = false;
-	std::vector<HLSLVertexAttributeRemap> remap_vertex_attributes;
+	SmallVector<HLSLVertexAttributeRemap> remap_vertex_attributes;
 
 	uint32_t type_to_consumed_locations(const SPIRType &type) const;
 
 	void emit_io_block(const SPIRVariable &var);
-	std::string to_semantic(uint32_t vertex_location);
+	std::string to_semantic(uint32_t location, spv::ExecutionModel em, spv::StorageClass sc);
 
 	uint32_t num_workgroups_builtin = 0;
 
 	// Custom root constant layout, which should be emitted
 	// when translating push constant ranges.
 	std::vector<RootConstants> root_constants_layout;
+
+	void validate_shader_model();
 };
-} // namespace spirv_cross
+} // namespace SPIRV_CROSS_NAMESPACE
 
 #endif
